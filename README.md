@@ -13,7 +13,7 @@
 Консольная утилита на Python для поиска коротких, "красивых" (не набор
 случайных букв) и **свободных** юзернеймов Telegram. Проверка доступности
 идёт через официальный метод Telegram API `account.CheckUsername`
-(библиотека Telethon) — точный ответ от самого Telegram, а не догадки по
+(библиотека Pyrogram) — точный ответ от самого Telegram, а не догадки по
 парсингу t.me.
 
 **[Скачать последнюю версию](https://github.com/acoolock3d/tg-usernames-hunter/releases/tag/v1.0.0)** · [Сайт проекта](https://tg-username-hunter.netlify.app)
@@ -34,12 +34,12 @@
 Нужен Python 3.9+.
 
 ```bash
-git clone https://github.com/v0idk1d/tg_username_hunter.git
+git clone https://github.com/acoolock3d/tg-usernames-hunter.git
 cd tg_username_hunter
-pip install telethon
+pip install pyrogram
 ```
 
-Если `telethon` не установлен — скрипт попробует поставить его сам при
+Если `pyrogram` не установлен — скрипт попробует поставить его сам при
 первом запуске.
 
 ### Получение api_id / api_hash
@@ -47,7 +47,7 @@ pip install telethon
 1. Зайти на [my.telegram.org](https://my.telegram.org) → API development tools
 2. Создать приложение, скопировать `api_id` и `api_hash`
 
-При первом запуске Telethon один раз попросит номер телефона и код из
+При первом запуске Pyrogram один раз попросит номер телефона и код из
 Telegram, дальше используется сохранённая сессия.
 
 ## Запуск
