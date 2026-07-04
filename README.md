@@ -16,7 +16,7 @@
 (библиотека Telethon) — точный ответ от самого Telegram, а не догадки по
 парсингу t.me.
 
-**[Скачать последнюю версию](https://github.com/v0idk1d/tg_username_hunter/releases/latest/download/tg_username_hunter.py)** · [Сайт проекта](https://tg-username-hunter.netlify.app)
+**[Скачать последнюю версию](https://github.com/acoolock3d/tg-usernames-hunter/releases/tag/v1.0.0)** · [Сайт проекта](https://tg-username-hunter.netlify.app)
 
 ---
 
