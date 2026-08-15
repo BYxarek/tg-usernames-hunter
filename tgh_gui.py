@@ -2,13 +2,13 @@
 """
 tg_username_hunter — GUI
 =========================
-Графический интерфейс поверх tg_username_hunter.py: тёмная минималистичная
+Графический интерфейс поверх tgh.py: тёмная минималистичная
 тема с белыми акцентами, плавные переходы между экранами, поддержка
 русского и английского языков.
 
 УСТАНОВКА
 ---------
-    pip install customtkinter pyrogram
+    pip install -r requirements.txt
 
 ВАЖНО: этот файл должен лежать в той же папке, что и tgh.py — он
 используется как модуль (генерация кандидатов, фильтры, проверка через
@@ -16,34 +16,28 @@ Telegram API).
 
 ЗАПУСК
 ------
-    python tg_username_hunter_gui.py
+    python tgh_gui.py
 """
 
 import importlib
-import subprocess
 import sys
 import os
-import time
 import queue
 import threading
 
 
-def ensure_package(pip_name: str, import_name: str = None):
+def require_package(pip_name: str, import_name: str = None):
     import_name = import_name or pip_name
     try:
         return importlib.import_module(import_name)
     except ImportError:
-        print(f"[setup] Библиотека '{pip_name}' не найдена, устанавливаю через pip...")
-        try:
-            subprocess.check_call([sys.executable, "-m", "pip", "install", "--quiet", pip_name])
-        except subprocess.CalledProcessError:
-            print(f"Не удалось установить '{pip_name}' автоматически. "
-                  f"Установите вручную: pip install {pip_name}")
-            sys.exit(1)
-        return importlib.import_module(import_name)
+        requirements = os.path.join(os.path.dirname(__file__), "requirements.txt")
+        print(f"Библиотека '{pip_name}' не установлена. Выполните: "
+              f"{sys.executable} -m pip install -r {requirements}")
+        sys.exit(1)
 
 
-ensure_package("customtkinter")
+require_package("customtkinter")
 import customtkinter as ctk  # noqa: E402
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -94,6 +88,8 @@ TEXTS = {
         "cred_get_link": "Открыть my.telegram.org",
         "api_id_ph": "api_id",
         "api_hash_ph": "api_hash",
+        "bot_token_ph": "токен бота",
+        "notify_ids_ph": "ID получателей через запятую",
         "connect_btn": "Подключиться",
         "connecting": "Подключение...",
 
@@ -139,15 +135,18 @@ TEXTS = {
         "status_available": "свободен",
         "status_fragment": "только Fragment",
         "status_taken": "занят",
+        "status_error": "ошибка / пропущен",
 
         "error_title": "Ошибка",
         "error_generic": "Что-то пошло не так: {msg}",
         "error_api_fields": "Заполните оба поля: api_id и api_hash.",
+        "error_config_fields": "Заполните API ID, API hash, токен бота и ID получателей.",
+        "error_config_save": "Не удалось сохранить config.py: {msg}",
         "error_phone": "Заполните номер телефона.",
         "error_code": "Введите код.",
         "error_password": "Введите пароль.",
 
-        "footer": "made by v0idk1d · help: @rlxmsa · powered by Claude AI",
+        "footer": "made by v0idk1d · github.com/BYxarek · help: @rlxmsa · powered by Claude AI",
     },
     "en": {
         "app_title": "TG USERNAME HUNTER",
@@ -159,6 +158,8 @@ TEXTS = {
         "cred_get_link": "Open my.telegram.org",
         "api_id_ph": "api_id",
         "api_hash_ph": "api_hash",
+        "bot_token_ph": "bot token",
+        "notify_ids_ph": "recipient IDs, comma-separated",
         "connect_btn": "Connect",
         "connecting": "Connecting...",
 
@@ -204,15 +205,18 @@ TEXTS = {
         "status_available": "available",
         "status_fragment": "Fragment only",
         "status_taken": "taken",
+        "status_error": "error / skipped",
 
         "error_title": "Error",
         "error_generic": "Something went wrong: {msg}",
         "error_api_fields": "Fill in both api_id and api_hash.",
+        "error_config_fields": "Fill in API ID, API hash, bot token, and recipient IDs.",
+        "error_config_save": "Could not save config.py: {msg}",
         "error_phone": "Enter your phone number.",
         "error_code": "Enter the code.",
         "error_password": "Enter the password.",
 
-        "footer": "made by v0idk1d · help: @rlxmsa · powered by Claude AI",
+        "footer": "made by v0idk1d · github.com/BYxarek · help: @rlxmsa · powered by Claude AI",
     },
 }
 
@@ -227,8 +231,8 @@ class App(ctk.CTk):
 
         self.lang = "ru"
         self.title(TEXTS[self.lang]["app_title"])
-        self.geometry("560x680")
-        self.minsize(480, 600)
+        self.geometry("560x760")
+        self.minsize(480, 680)
         self.configure(fg_color=BG)
 
         ctk.set_appearance_mode("dark")
@@ -238,7 +242,7 @@ class App(ctk.CTk):
         self.in_q = queue.Queue()
         self.stop_flag = threading.Event()
 
-        # ОДИН постоянный поток с ОДНИМ event loop — все вызовы Pyrogram
+        # ОДИН постоянный поток с ОДНИМ event loop — все вызовы Pyrofork
         # обязаны идти через него, иначе клиент "теряет" свой loop между шагами
         self.job_q = queue.Queue()
         self.worker_thread = threading.Thread(target=self._worker_loop, daemon=True)
@@ -251,6 +255,8 @@ class App(ctk.CTk):
         self._build_chrome()
         self.current_screen = "credentials"
         self.show_credentials_screen()
+        if all(core.get_setting(name) for name in core.CONFIG_NAMES):
+            self._on_connect_clicked()
 
         self._fade_in()
         self.after(80, self._poll_queue)
@@ -270,7 +276,7 @@ class App(ctk.CTk):
 
     def _worker_loop(self):
         """Живёт всё время работы приложения в одном потоке с одним event loop.
-        Все вызовы Pyrogram должны идти через self.job_q.put(...), иначе
+        Все вызовы Pyrofork должны идти через self.job_q.put(...), иначе
         клиент окажется привязан к другому loop и начнёт падать со
         странными ошибками asyncio."""
         import asyncio
@@ -375,10 +381,26 @@ class App(ctk.CTk):
         self.api_id_entry = ctk.CTkEntry(frame, placeholder_text=self.t("api_id_ph"), fg_color=BG_INPUT,
                                           border_color=BORDER, text_color=FG, height=42)
         self.api_id_entry.pack(fill="x", pady=(0, 10))
+        if core.get_setting("TG_API_ID"):
+            self.api_id_entry.insert(0, core.get_setting("TG_API_ID"))
 
         self.api_hash_entry = ctk.CTkEntry(frame, placeholder_text=self.t("api_hash_ph"), fg_color=BG_INPUT,
                                             border_color=BORDER, text_color=FG, height=42, show="•")
-        self.api_hash_entry.pack(fill="x", pady=(0, 20))
+        self.api_hash_entry.pack(fill="x", pady=(0, 10))
+        if core.get_setting("TG_API_HASH"):
+            self.api_hash_entry.insert(0, core.get_setting("TG_API_HASH"))
+
+        self.bot_token_entry = ctk.CTkEntry(frame, placeholder_text=self.t("bot_token_ph"), fg_color=BG_INPUT,
+                                            border_color=BORDER, text_color=FG, height=42, show="•")
+        self.bot_token_entry.pack(fill="x", pady=(0, 10))
+        if core.get_setting("TG_BOT_TOKEN"):
+            self.bot_token_entry.insert(0, core.get_setting("TG_BOT_TOKEN"))
+
+        self.notify_ids_entry = ctk.CTkEntry(frame, placeholder_text=self.t("notify_ids_ph"), fg_color=BG_INPUT,
+                                             border_color=BORDER, text_color=FG, height=42)
+        self.notify_ids_entry.pack(fill="x", pady=(0, 20))
+        if core.get_setting("TG_NOTIFY_CHAT_IDS"):
+            self.notify_ids_entry.insert(0, core.get_setting("TG_NOTIFY_CHAT_IDS"))
 
         self.cred_error_holder = ctk.CTkFrame(frame, fg_color="transparent")
         self.cred_error_holder.pack(fill="x")
@@ -399,8 +421,23 @@ class App(ctk.CTk):
             w.destroy()
         api_id = self.api_id_entry.get().strip()
         api_hash = self.api_hash_entry.get().strip()
-        if not api_id.isdigit() or not api_hash:
-            self._show_inline_error(self.cred_error_holder, self.t("error_api_fields"))
+        bot_token = self.bot_token_entry.get().strip()
+        notify_chat_ids = core.parse_notify_chat_ids(self.notify_ids_entry.get())
+        if not api_id.isdigit() or not api_hash or ":" not in bot_token or not notify_chat_ids:
+            self._show_inline_error(self.cred_error_holder, self.t("error_config_fields"))
+            return
+
+        try:
+            core.save_config({
+                "TG_API_ID": api_id,
+                "TG_API_HASH": api_hash,
+                "TG_BOT_TOKEN": bot_token,
+                "TG_NOTIFY_CHAT_IDS": ",".join(notify_chat_ids),
+            })
+        except OSError as e:
+            self._show_inline_error(
+                self.cred_error_holder, self.t("error_config_save", msg=e)
+            )
             return
 
         self.connect_btn.configure(state="disabled", text=self.t("connecting"))
@@ -408,7 +445,15 @@ class App(ctk.CTk):
 
     def _worker_connect(self, api_id, api_hash):
         try:
-            app = core.Client("gui_session", api_id=int(api_id), api_hash=api_hash)
+            session_dir = os.path.join(
+                os.environ.get("LOCALAPPDATA", os.path.expanduser("~")),
+                "TGUsernameHunter",
+            )
+            os.makedirs(session_dir, exist_ok=True)
+            app = core.Client(
+                "gui_session", api_id=int(api_id), api_hash=api_hash,
+                workdir=session_dir,
+            )
             app.connect()
         except Exception as e:
             self.out_q.put(("connect_error", str(e)))
@@ -729,32 +774,13 @@ class App(ctk.CTk):
     def _worker_search(self, settings):
         mode = settings["mode"]
         min_len, max_len, limit = settings["min_len"], settings["max_len"], settings["limit"]
-
-        if mode == "dict":
-            candidates = list(core.gen_dict_candidates(min_len, max_len, limit * 5))
-        elif mode == "syllable":
-            candidates = list(core.gen_syllable_candidates(min_len, max_len, limit * 5))
-        elif mode == "list":
-            words = settings.get("words") or ""
-            candidates = [w.strip() for w in words.split(",") if w.strip()]
-        else:
-            candidates = list(core.gen_dict_candidates(min_len, max_len, limit * 3)) + \
-                         list(core.gen_syllable_candidates(min_len, max_len, limit * 3))
-
-        filtered = []
-        for c in candidates:
-            if not core.is_valid_telegram_format(c):
-                continue
-            if not core.no_digits_no_uppercase(c):
-                continue
-            if mode != "list" and not core.looks_beautiful(c):
-                continue
-            filtered.append(c)
-
-        import random
-        random.shuffle(filtered)
-        if mode != "list":
-            filtered = filtered[:limit]
+        filtered = core.prepare_candidates(
+            mode, min_len, max_len, limit, settings.get("words")
+        )
+        bot_token = core.get_setting("TG_BOT_TOKEN")
+        notify_chat_ids = core.parse_notify_chat_ids(
+            core.get_setting("TG_NOTIFY_CHAT_IDS") or core.get_setting("TG_NOTIFY_CHAT_ID")
+        )
 
         total = len(filtered)
         self.out_q.put(("search_total", total))
@@ -763,9 +789,16 @@ class App(ctk.CTk):
             if self.stop_flag.is_set():
                 self.out_q.put(("search_stopped", i))
                 return
-            available = core.check_username(self.app_client, username)
+            available = core.check_username(self.app_client, username, self.stop_flag)
+            if self.stop_flag.is_set():
+                self.out_q.put(("search_stopped", i))
+                return
             self.out_q.put(("search_result", i, total, username, available))
-            time.sleep(settings["delay"])
+            if available is True:
+                core.notify_available_username(bot_token, notify_chat_ids, username)
+            if self.stop_flag.wait(settings["delay"]):
+                self.out_q.put(("search_stopped", i))
+                return
 
         self.out_q.put(("search_done", total))
 
@@ -778,8 +811,10 @@ class App(ctk.CTk):
             mark, status_text, weight = "●", self.t("status_available"), "bold"
         elif available == "fragment":
             mark, status_text, weight = "○", self.t("status_fragment"), "normal"
-        else:
+        elif available is False:
             mark, status_text, weight = "·", self.t("status_taken"), "normal"
+        else:
+            mark, status_text, weight = "!", self.t("status_error"), "normal"
 
         row = ctk.CTkFrame(self.results_scroll, fg_color="transparent")
         row.pack(fill="x", padx=8, pady=3)

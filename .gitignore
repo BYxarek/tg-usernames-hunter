@@ -1,0 +1,11 @@
+.venv/
+.pyinstaller/
+dist/
+.env
+config.py
+config.py.tmp
+__pycache__/
+*.py[cod]
+*.session
+*.session-*
+found*.txt

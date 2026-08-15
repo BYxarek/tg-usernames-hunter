@@ -13,7 +13,7 @@
 Консольная утилита на Python для поиска коротких, "красивых" (не набор
 случайных букв) и **свободных** юзернеймов Telegram. Проверка доступности
 идёт через официальный метод Telegram API `account.CheckUsername`
-(библиотека Pyrogram) — точный ответ от самого Telegram, а не догадки по
+(библиотека Pyrofork) — точный ответ от самого Telegram, а не догадки по
 парсингу t.me.
 
 **[Скачать последнюю версию](https://github.com/acoolock3d/tg-usernames-hunter/releases/tag/v1.0.0)** · [Сайт проекта](https://tg-username-hunter.netlify.app)
@@ -27,35 +27,60 @@
 - длина ника от 3 до 6 символов на выбор
 - без цифр и без заглавных букв
 - меню прямо в консоли — запустил и выбрал пункт
-- автоустановка недостающих зависимостей через pip
+- уведомления о найденных свободных никах через Telegram-бота
 
 ## Установка
 
-Нужен Python 3.9+.
+Нужен Python 3.10+. Python 3.14 поддерживается и проверяется при установке.
+
+> **Совместимость с Python 3.14:** исходный Pyrogram заменён на поддерживаемый
+> drop-in fork Pyrofork. Импорты `pyrogram` в коде сохранены — это имя модуля,
+> предоставляемого пакетом `pyrofork`.
 
 ```bash
 git clone https://github.com/acoolock3d/tg-usernames-hunter.git
-cd tg_username_hunter
-pip install pyrogram
+cd tg-usernames-hunter
+pip install -r requirements.txt
 ```
 
-Если `pyrogram` не установлен — скрипт попробует поставить его сам при
-первом запуске.
+Если зависимости не установлены, скрипт завершится и покажет команду
+`pip install -r requirements.txt`; запуск больше не изменяет окружение автоматически.
 
 ### Получение api_id / api_hash
 
 1. Зайти на [my.telegram.org](https://my.telegram.org) → API development tools
 2. Создать приложение, скопировать `api_id` и `api_hash`
 
-При первом запуске Pyrogram один раз попросит номер телефона и код из
+При первом запуске Pyrofork один раз попросит номер телефона и код из
 Telegram, дальше используется сохранённая сессия.
+
+Все настройки хранятся в локальном `config.py` рядом со скриптом или EXE.
+Если файл отсутствует, пуст или заполнен не полностью, GUI покажет четыре поля,
+сохранит введённые значения и подключится. Telegram-сессия хранится отдельно в
+`%LOCALAPPDATA%\TGUsernameHunter`.
+
+### Уведомления через бота
+
+`config.py` содержит API-данные, токен и один или несколько Telegram user ID:
+
+```python
+TG_API_ID = "123456"
+TG_API_HASH = "abcdef0123456789abcdef0123456789"
+TG_BOT_TOKEN = "123456:token"
+TG_NOTIFY_CHAT_IDS = "1243802669,987654321"
+```
+
+Файл `config.py` содержит секреты, поэтому исключён из Git и не должен публиковаться;
+безопасный шаблон находится в `config.example.py`.
+Каждый получатель должен сначала отправить боту `/start`. Уведомления отправляются
+только для юзернеймов, которые доступны напрямую; результаты Fragment не рассылаются.
 
 ## Запуск
 
 Без аргументов — интерактивное меню прямо в консоли:
 
 ```bash
-python tg_username_hunter.py
+python tgh.py
 ```
 
 ```
@@ -75,7 +100,7 @@ python tg_username_hunter.py
 export TG_API_ID=123456
 export TG_API_HASH=abcdef0123456789abcdef0123456789
 
-python tg_username_hunter.py --mode both --min-len 3 --max-len 6 --limit 200
+python tgh.py --mode both --min-len 3 --max-len 6 --limit 200
 ```
 
 | Флаг         | Описание                                             | По умолчанию |
@@ -89,6 +114,17 @@ python tg_username_hunter.py --mode both --min-len 3 --max-len 6 --limit 200
 | `--output`   | файл для найденных свободных ников                    | `found.txt`  |
 
 Найденные свободные ники пишутся в консоль и дописываются в `found.txt`.
+
+## Сборка EXE
+
+```powershell
+pyinstaller --noconfirm --clean --onefile --windowed `
+  --name TG_Username_Hunter --workpath .pyinstaller/build `
+  --specpath .pyinstaller tgh_gui.py
+```
+
+Готовое приложение появится в `dist/TG_Username_Hunter.exe`. Положите `config.py`
+рядом с EXE либо заполните настройки в интерфейсе при первом запуске.
 
 > **О коротких никах (3–4 символа):** такие юзернеймы обычным аккаунтам
 > напрямую не выдаются — они распределяются через аукцион
@@ -111,7 +147,7 @@ MIT — используйте, форкайте, дорабатывайте.
 
 <div align="center">
 
-**made by v0idk1d** · help: [@rlxmsa](https://t.me/rlxmsa) · powered by Claude AI
+**made by v0idk1d** · [github.com/BYxarek](https://github.com/BYxarek) · help: [@rlxmsa](https://t.me/rlxmsa) · powered by Claude AI
 
 </div>
 

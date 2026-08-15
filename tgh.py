@@ -6,59 +6,117 @@ Telegram Username Hunter
 для Telegram: без цифр, без заглавных букв, длина на выбор (3-6 символов).
 
 Проверка доступности идёт через официальный метод Telegram API
-account.CheckUsername (библиотека Pyrogram) — точный ответ от самого
+account.CheckUsername (библиотека Pyrofork) — точный ответ от самого
 Telegram, а не догадки по парсингу t.me.
 
-Если библиотека pyrogram не установлена, скрипт попробует поставить её
-сам через pip при запуске.
+Зависимости устанавливаются заранее командой pip install -r requirements.txt.
 
 ПОЛУЧЕНИЕ api_id / api_hash
 ----------------------------
     1. Зайти на https://my.telegram.org -> API development tools
     2. Создать приложение, скопировать api_id и api_hash
 
-При первом запуске Pyrogram попросит номер телефона и код из Telegram —
+При первом запуске Pyrofork попросит номер телефона и код из Telegram —
 это нужно один раз, дальше используется сохранённая сессия (файл .session).
 
 ЗАПУСК
 ------
 Без аргументов - интерактивный режим (задаст вопросы прямо в консоли):
-    python tg_username_hunter.py
+    python tgh.py
 
 С аргументами - управление напрямую:
     export TG_API_ID=123456
     export TG_API_HASH=abcdef0123456789abcdef0123456789
-    python tg_username_hunter.py --mode both --min-len 3 --max-len 6 --limit 200
+    python tgh.py --mode both --min-len 3 --max-len 6 --limit 200
 """
 
 import importlib
-import subprocess
+import ast
+import json
+import os
 import sys
+import urllib.error
+import urllib.parse
+import urllib.request
 
 
-def ensure_package(pip_name: str, import_name: str = None):
-    """Импортирует пакет, а если его нет - ставит через pip и импортирует снова."""
+def require_package(pip_name: str, import_name: str = None):
+    """Импортирует пакет или завершает работу с командой установки."""
     import_name = import_name or pip_name
     try:
         return importlib.import_module(import_name)
     except ImportError:
-        print(f"[setup] Библиотека '{pip_name}' не найдена, устанавливаю через pip...")
+        requirements = os.path.join(os.path.dirname(__file__), "requirements.txt")
+        print(f"Библиотека '{pip_name}' не установлена. Выполните: "
+              f"{sys.executable} -m pip install -r {requirements}")
+        sys.exit(1)
+
+
+CONFIG_NAMES = ("TG_API_ID", "TG_API_HASH", "TG_BOT_TOKEN", "TG_NOTIFY_CHAT_IDS")
+
+
+def config_path() -> str:
+    base = os.path.dirname(sys.executable if getattr(sys, "frozen", False) else __file__)
+    return os.path.join(base, "config.py")
+
+
+def load_config(path: str = None) -> dict[str, str]:
+    try:
+        with open(path or config_path(), encoding="utf-8") as file:
+            tree = ast.parse(file.read())
+    except (OSError, SyntaxError):
+        return {}
+
+    values = {}
+    for node in tree.body:
+        if not isinstance(node, ast.Assign) or len(node.targets) != 1:
+            continue
+        target = node.targets[0]
+        if not isinstance(target, ast.Name) or target.id not in CONFIG_NAMES:
+            continue
         try:
-            subprocess.check_call([sys.executable, "-m", "pip", "install", "--quiet", pip_name])
-        except subprocess.CalledProcessError:
-            print(f"Не удалось установить '{pip_name}' автоматически. "
-                  f"Установите вручную: pip install {pip_name}")
-            sys.exit(1)
-        return importlib.import_module(import_name)
+            value = ast.literal_eval(node.value)
+        except (ValueError, TypeError):
+            continue
+        if isinstance(value, (str, int)):
+            values[target.id] = str(value).strip()
+    return values
 
 
-pyrogram_mod = ensure_package("pyrogram")
+def save_config(values: dict[str, str], path: str = None):
+    target = path or config_path()
+    temporary = target + ".tmp"
+    content = "# Telegram Username Hunter — local settings, do not commit.\n" + "".join(
+        f"{name} = {str(values.get(name, '')).strip()!r}\n" for name in CONFIG_NAMES
+    )
+    with open(temporary, "w", encoding="utf-8", newline="\n") as file:
+        file.write(content)
+        file.flush()
+        os.fsync(file.fileno())
+    os.replace(temporary, target)
+
+
+def get_setting(name: str) -> str | None:
+    value = load_config().get(name)
+    if value:
+        return value
+    value = os.environ.get(name)
+    if value or os.name != "nt":
+        return value
+    try:
+        import winreg
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, "Environment") as key:
+            return winreg.QueryValueEx(key, name)[0]
+    except OSError:
+        return None
+
+
+pyrogram_mod = require_package("pyrofork", "pyrogram")
 Client = pyrogram_mod.Client
 from pyrogram.raw.functions.account import CheckUsername  # noqa: E402
 from pyrogram.errors import FloodWait, UsernameInvalid, RPCError  # noqa: E402
 
 import argparse
-import os
 import random
 import re
 import shutil
@@ -157,32 +215,103 @@ def is_valid_telegram_format(username: str) -> bool:
     return True
 
 
+def prepare_candidates(mode: str, min_len: int, max_len: int, limit: int,
+                       words: str = None) -> list[str]:
+    """Генерирует, фильтрует и удаляет дубликаты одинаково для CLI и GUI."""
+    if mode == "dict":
+        candidates = list(gen_dict_candidates(min_len, max_len, limit * 5))
+    elif mode == "syllable":
+        candidates = list(gen_syllable_candidates(min_len, max_len, limit * 5))
+    elif mode == "list":
+        candidates = [word.strip() for word in (words or "").split(",") if word.strip()]
+    else:
+        candidates = list(gen_dict_candidates(min_len, max_len, limit * 3)) + \
+                     list(gen_syllable_candidates(min_len, max_len, limit * 3))
+
+    filtered = [
+        candidate for candidate in candidates
+        if is_valid_telegram_format(candidate)
+        and no_digits_no_uppercase(candidate)
+        and (mode == "list" or looks_beautiful(candidate))
+    ]
+    filtered = list(dict.fromkeys(filtered))
+    random.shuffle(filtered)
+    return filtered if mode == "list" else filtered[:limit]
+
+
 # ---------------------------------------------------------------------------
 # Проверка доступности через Telegram API
 # ---------------------------------------------------------------------------
 
-def check_username(app, username: str):
+def check_username(app, username: str, stop_event=None):
     """
     True   = свободен напрямую
     False  = занят
     "fragment" = свободен, но только через аукцион Fragment (fragment.com)
     None   = неверный формат или Telegram вернул непредвиденную ошибку (пропускаем)
     """
+    while not stop_event or not stop_event.is_set():
+        try:
+            return app.invoke(CheckUsername(username=username))
+        except UsernameInvalid:
+            return None
+        except FloodWait as e:
+            wait = int(getattr(e, "value", None) or getattr(e, "x", 5)) + 1
+            print(f"  [flood wait] Telegram просит подождать {wait} сек...")
+            if stop_event:
+                if stop_event.wait(wait):
+                    return None
+            else:
+                time.sleep(wait)
+        except RPCError as e:
+            msg = str(e)
+            if "USERNAME_PURCHASE_AVAILABLE" in msg:
+                return "fragment"
+            print(f"  [пропуск] {username}: Telegram вернул ошибку ({msg})")
+            return None
+    return None
+
+
+def _bot_api(token: str, method: str, **data):
+    request = urllib.request.Request(
+        f"https://api.telegram.org/bot{token}/{method}",
+        data=urllib.parse.urlencode(data).encode(),
+    )
     try:
-        return app.invoke(CheckUsername(username=username))
-    except UsernameInvalid:
-        return None
-    except FloodWait as e:
-        wait = int(getattr(e, "value", None) or getattr(e, "x", 5)) + 1
-        print(f"  [flood wait] Telegram просит подождать {wait} сек...")
-        time.sleep(wait)
-        return check_username(app, username)
-    except RPCError as e:
-        msg = str(e)
-        if "USERNAME_PURCHASE_AVAILABLE" in msg:
-            return "fragment"
-        print(f"  [пропуск] {username}: Telegram вернул ошибку ({msg})")
-        return None
+        with urllib.request.urlopen(request, timeout=10) as response:
+            payload = json.load(response)
+    except urllib.error.HTTPError as e:
+        try:
+            description = json.loads(e.read()).get("description", f"HTTP {e.code}")
+        except Exception:
+            description = f"HTTP {e.code}"
+        raise RuntimeError(description) from None
+    except urllib.error.URLError as e:
+        raise RuntimeError(f"ошибка сети: {e.reason}") from None
+    if not payload.get("ok"):
+        raise RuntimeError(payload.get("description", "Telegram Bot API error"))
+    return payload.get("result")
+
+
+def parse_notify_chat_ids(chat_ids: str = None) -> list[str]:
+    return list(dict.fromkeys(
+        chat_id.strip() for chat_id in (chat_ids or "").split(",")
+        if chat_id.strip().isdigit()
+    ))
+
+
+def notify_available_username(token: str, chat_ids: list[str], username: str) -> bool:
+    if not token or not chat_ids:
+        return False
+    sent = False
+    for chat_id in chat_ids:
+        try:
+            _bot_api(token, "sendMessage", chat_id=chat_id,
+                     text=f"Найден свободный Telegram username: @{username}")
+            sent = True
+        except Exception as e:
+            print(f"[bot] Не удалось отправить @{username} пользователю {chat_id}: {e}")
+    return sent
 
 
 GREEN = "\033[92m"
@@ -265,7 +394,7 @@ def build_menu():
 
     out = [_center(plain, colored, term_width) for plain, colored in lines]
 
-    footer_plain = "by v0idk1d | help: @rlxmsa | powered by Claude AI"
+    footer_plain = "by v0idk1d | github.com/BYxarek | help: @rlxmsa | powered by Claude AI"
     footer_colored = f"{DIM}{footer_plain}{RESET}"
     out.append(_center(footer_plain, footer_colored, term_width))
 
@@ -325,8 +454,8 @@ def interactive_settings():
 
 
 def run(args):
-    api_id = args.api_id or os.environ.get("TG_API_ID")
-    api_hash = args.api_hash or os.environ.get("TG_API_HASH")
+    api_id = args.api_id or get_setting("TG_API_ID")
+    api_hash = args.api_hash or get_setting("TG_API_HASH")
     if not api_id or not api_hash:
         api_id = api_id or input("Введите api_id (см. https://my.telegram.org): ").strip()
         api_hash = api_hash or input("Введите api_hash: ").strip()
@@ -334,32 +463,12 @@ def run(args):
         print("api_id/api_hash обязательны.")
         sys.exit(1)
 
-    if args.mode == "dict":
-        candidates = list(gen_dict_candidates(args.min_len, args.max_len, args.limit * 5))
-    elif args.mode == "syllable":
-        candidates = list(gen_syllable_candidates(args.min_len, args.max_len, args.limit * 5))
-    elif args.mode == "list":
-        if not args.words:
-            print("Для --mode list нужно передать --words слово1,слово2,...")
-            sys.exit(1)
-        candidates = [w.strip() for w in args.words.split(",") if w.strip()]
-    else:
-        candidates = list(gen_dict_candidates(args.min_len, args.max_len, args.limit * 3)) + \
-                     list(gen_syllable_candidates(args.min_len, args.max_len, args.limit * 3))
-
-    filtered = []
-    for c in candidates:
-        if not is_valid_telegram_format(c):
-            continue
-        if not no_digits_no_uppercase(c):
-            continue
-        if args.mode != "list" and not looks_beautiful(c):
-            continue
-        filtered.append(c)
-
-    random.shuffle(filtered)
-    if args.mode != "list":
-        filtered = filtered[: args.limit]
+    if args.mode == "list" and not args.words:
+        print("Для --mode list нужно передать --words слово1,слово2,...")
+        sys.exit(1)
+    filtered = prepare_candidates(
+        args.mode, args.min_len, args.max_len, args.limit, args.words
+    )
 
     if not filtered:
         print("Нет кандидатов, подходящих под критерии. Смягчите --min-len/--max-len.")
@@ -378,6 +487,10 @@ def run(args):
     found_fragment = []
     out_path = Path(args.output)
     fragment_path = out_path.with_name(out_path.stem + "_fragment" + out_path.suffix)
+    bot_token = get_setting("TG_BOT_TOKEN")
+    notify_chat_ids = parse_notify_chat_ids(
+        get_setting("TG_NOTIFY_CHAT_IDS") or get_setting("TG_NOTIFY_CHAT_ID")
+    )
 
     with app:
         with out_path.open("a", encoding="utf-8") as out_f, \
@@ -398,6 +511,7 @@ def run(args):
                     found.append(username)
                     out_f.write(username + "\n")
                     out_f.flush()
+                    notify_available_username(bot_token, notify_chat_ids, username)
                 elif available == "fragment":
                     found_fragment.append(username)
                     frag_f.write(username + "\n")
@@ -478,7 +592,7 @@ def _colored_banner():
     nick_lines = [f"{GREEN}{BOLD}{row}{RESET}" for row in nick_rows]
 
     made_by = "made by"
-    credit = "help: @rlxmsa   ·   powered by Claude AI"
+    credit = "github.com/BYxarek   ·   help: @rlxmsa   ·   powered by Claude AI"
 
     out = [""]
     out.append(_center(made_by, f"{DIM}{made_by}{RESET}", term_width))
