@@ -18,9 +18,25 @@ def main():
         assert tgh.load_config(path) == values
 
     candidates = tgh.prepare_candidates(
-        "list", 3, 6, 100, "nova,nova,echo,bad-,UPPER"
+        "list", 5, 32, 100, "novaa,novaa,echoo,bad-,UPPER"
     )
-    assert set(candidates) == {"nova", "echo"}
+    assert set(candidates) == {"novaa", "echoo"}
+
+    assert tgh.prepare_candidates(
+        "list", 5, 32, 100, "nova7,nova_x,nova"
+    ) == []
+    enabled = set(tgh.prepare_candidates(
+        "list", 5, 32, 100, "nova7,nova_x",
+        allow_digits=True, allow_underscore=True,
+    ))
+    assert enabled == {"nova7", "nova_x"}
+
+    generated = tgh.prepare_candidates(
+        "both", 5, 32, 200, allow_digits=True, allow_underscore=True
+    )
+    assert generated
+    assert all(5 <= len(name) <= 32 for name in generated)
+    assert all(tgh.is_valid_telegram_format(name) for name in generated)
 
     assert tgh.parse_notify_chat_ids("1, 2,1,, bad, 3") == ["1", "2", "3"]
 

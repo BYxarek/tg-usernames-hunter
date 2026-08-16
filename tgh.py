@@ -38,6 +38,7 @@ import sys
 import urllib.error
 import urllib.parse
 import urllib.request
+import threading
 
 
 def require_package(pip_name: str, import_name: str = None):
@@ -272,6 +273,13 @@ def check_username(app, username: str, stop_event=None):
     return None
 
 
+class BotAPIError(RuntimeError):
+    def __init__(self, description: str, error_code: int | None = None, retry_after: int | None = None):
+        super().__init__(description)
+        self.error_code = error_code
+        self.retry_after = retry_after
+
+
 def _bot_api(token: str, method: str, **data):
     request = urllib.request.Request(
         f"https://api.telegram.org/bot{token}/{method}",
@@ -282,14 +290,21 @@ def _bot_api(token: str, method: str, **data):
             payload = json.load(response)
     except urllib.error.HTTPError as e:
         try:
-            description = json.loads(e.read()).get("description", f"HTTP {e.code}")
+            payload = json.loads(e.read())
+            description = payload.get("description", f"HTTP {e.code}")
+            retry_after = payload.get("parameters", {}).get("retry_after")
+            error_code = payload.get("error_code", e.code)
         except Exception:
-            description = f"HTTP {e.code}"
-        raise RuntimeError(description) from None
+            description, retry_after, error_code = f"HTTP {e.code}", None, e.code
+        raise BotAPIError(description, error_code, retry_after) from None
     except urllib.error.URLError as e:
-        raise RuntimeError(f"ошибка сети: {e.reason}") from None
+        raise BotAPIError(f"ошибка сети: {e.reason}") from None
     if not payload.get("ok"):
-        raise RuntimeError(payload.get("description", "Telegram Bot API error"))
+        raise BotAPIError(
+            payload.get("description", "Telegram Bot API error"),
+            payload.get("error_code"),
+            payload.get("parameters", {}).get("retry_after"),
+        )
     return payload.get("result")
 
 
@@ -300,17 +315,41 @@ def parse_notify_chat_ids(chat_ids: str = None) -> list[str]:
     ))
 
 
+_bot_rate_lock = threading.Lock()
+_bot_last_sent: dict[str, float] = {}
+
+
+def _respect_bot_chat_rate_limit(chat_id: str):
+    # Telegram recommends staying at or below ~1 message/second in a single chat.
+    with _bot_rate_lock:
+        now = time.monotonic()
+        wait = 1.05 - (now - _bot_last_sent.get(chat_id, 0.0))
+        if wait > 0:
+            time.sleep(wait)
+        _bot_last_sent[chat_id] = time.monotonic()
+
+
 def notify_available_username(token: str, chat_ids: list[str], username: str) -> bool:
     if not token or not chat_ids:
         return False
     sent = False
     for chat_id in chat_ids:
-        try:
-            _bot_api(token, "sendMessage", chat_id=chat_id,
-                     text=f"Найден свободный Telegram username: @{username}")
-            sent = True
-        except Exception as e:
-            print(f"[bot] Не удалось отправить @{username} пользователю {chat_id}: {e}")
+        for attempt in range(2):
+            try:
+                _respect_bot_chat_rate_limit(chat_id)
+                _bot_api(token, "sendMessage", chat_id=chat_id,
+                         text=f"Найден свободный Telegram username: @{username}")
+                sent = True
+                break
+            except BotAPIError as e:
+                if e.error_code == 429 and e.retry_after is not None and attempt == 0:
+                    time.sleep(max(1, int(e.retry_after)))
+                    continue
+                print(f"[bot] Не удалось отправить @{username} пользователю {chat_id}: {e}")
+                break
+            except Exception as e:
+                print(f"[bot] Не удалось отправить @{username} пользователю {chat_id}: {e}")
+                break
     return sent
 
 

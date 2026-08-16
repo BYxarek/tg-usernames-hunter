@@ -349,9 +349,27 @@ class App(ctk.CTk):
             w.destroy()
 
     def _slide_in(self, frame):
-        """Небольшая анимация появления экрана — сдвиг + фейд через смену цвета не поддерживается
-        нативно у CTk, поэтому имитируем через постепенное увеличение отступа."""
-        frame.pack(fill="both", expand=True)
+        """Плавное появление экрана без блокировки Tk mainloop."""
+        frame.pack(fill="both", expand=True, pady=(18, 0))
+        self._animate_pack_offset(frame, 18)
+
+    def _animate_pack_offset(self, widget, offset):
+        if not widget.winfo_exists():
+            return
+        next_offset = max(0, int(offset * 0.68) - 1)
+        widget.pack_configure(pady=(next_offset, 0))
+        if next_offset > 0:
+            self.after(16, lambda: self._animate_pack_offset(widget, next_offset))
+
+    def _pulse_button(self, button, step=0):
+        colors = ["#e7e7e7", "#f3f3f3", WHITE]
+        if not button.winfo_exists() or step >= len(colors):
+            return
+        try:
+            button.configure(fg_color=colors[step])
+            self.after(45, lambda: self._pulse_button(button, step + 1))
+        except Exception:
+            pass
 
     # ---- error banner helper ----
     def _show_inline_error(self, parent, message):
@@ -440,6 +458,7 @@ class App(ctk.CTk):
             )
             return
 
+        self._pulse_button(self.connect_btn)
         self.connect_btn.configure(state="disabled", text=self.t("connecting"))
         self.job_q.put(lambda: self._worker_connect(api_id, api_hash))
 
@@ -500,6 +519,7 @@ class App(ctk.CTk):
             self._show_inline_error(self.phone_error_holder, self.t("error_phone"))
             return
         self.pending_phone = phone
+        self._pulse_button(self.send_code_btn)
         self.send_code_btn.configure(state="disabled", text=self.t("sending_code"))
         self.job_q.put(lambda: self._worker_send_code(phone))
 
@@ -544,6 +564,7 @@ class App(ctk.CTk):
         if not code:
             self._show_inline_error(self.code_error_holder, self.t("error_code"))
             return
+        self._pulse_button(self.confirm_code_btn)
         self.confirm_code_btn.configure(state="disabled", text=self.t("checking_code"))
         self.job_q.put(lambda: self._worker_confirm_code(code))
 
@@ -708,9 +729,10 @@ class App(ctk.CTk):
         except ValueError:
             limit = 100
         try:
-            delay = float(self.delay_entry.get().strip() or "1.0")
+            delay = max(0.0, float(self.delay_entry.get().strip() or "1.0"))
         except ValueError:
             delay = 1.0
+        limit = max(1, min(limit, 10000))
         min_len = int(self.min_len_var.get())
         max_len = max(min_len, int(self.max_len_var.get()))
         words = self.list_entry.get().strip() if mode == "list" else None
