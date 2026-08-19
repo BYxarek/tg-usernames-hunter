@@ -8,4 +8,8 @@ __pycache__/
 *.py[cod]
 *.session
 *.session-*
-found*.txt
+
+*.log
+tgh.log.*
+
+.build_stage/

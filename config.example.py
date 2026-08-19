@@ -1,4 +1,5 @@
-# Copy this file to config.py or fill the fields in the GUI.
+# Telegram Username Hunter — example settings.
+# Copy this file to config.py and fill in your own values.
 TG_API_ID = ""
 TG_API_HASH = ""
 TG_BOT_TOKEN = ""
