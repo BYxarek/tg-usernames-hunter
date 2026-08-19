@@ -6,6 +6,7 @@ chcp 65001 >nul
 set "APP_NAME=TG_Username_Hunter"
 set "STAGE=.build_stage"
 set "BUILD_LOG=build_exe.log"
+set "SCRIPT_REV=2026-08-19-r4"
 
 rem Internal build mode. The outer invocation launches this mode through
 rem PowerShell Tee-Object so every line is visible live and saved to the log.
@@ -14,6 +15,7 @@ if /i "%~1"=="__build" goto build_internal
 rem Always start a fresh build log for this run.
 >"%BUILD_LOG%" echo ============================================================
 >>"%BUILD_LOG%" echo TG Username Hunter - clean isolated Windows build log
+>>"%BUILD_LOG%" echo Script revision: %SCRIPT_REV%
 >>"%BUILD_LOG%" echo Started: %DATE% %TIME%
 >>"%BUILD_LOG%" echo Working directory: %CD%
 >>"%BUILD_LOG%" echo ============================================================
@@ -22,6 +24,7 @@ rem Always start a fresh build log for this run.
 cls
 echo ============================================================
 echo TG Username Hunter - clean isolated Windows build
+echo Script revision: %SCRIPT_REV%
 echo ============================================================
 echo Live output is also written to:
 echo %CD%\%BUILD_LOG%
@@ -30,9 +33,9 @@ echo.
 
 rem Run the actual build as a child CMD process. PowerShell Tee-Object mirrors
 rem stdout/stderr to both this console and build_exe.log in real time.
-rem Use Get-Location instead of $env:CD because CD is not a guaranteed env var.
+rem Any PowerShell wrapper error is fatal and returns code 99.
 powershell -NoProfile -ExecutionPolicy Bypass -Command ^
-  "$ErrorActionPreference='Continue'; $root=(Get-Location).Path; $script=Join-Path $root 'build_exe.cmd'; $log=Join-Path $root 'build_exe.log'; & cmd.exe /d /c ('"' + $script + '" __build') 2>&1 | Tee-Object -FilePath $log -Append; exit $LASTEXITCODE"
+  "$ErrorActionPreference='Stop'; try { $root=(Get-Location).Path; $script=Join-Path -Path $root -ChildPath 'build_exe.cmd'; $log=Join-Path -Path $root -ChildPath 'build_exe.log'; $q=[char]34; $cmdline=$q + $script + $q + ' __build'; ^& $env:ComSpec /d /c $cmdline 2^>^&1 ^| Tee-Object -FilePath $log -Append; $rc=$LASTEXITCODE; if ($null -eq $rc) { $rc=1 }; exit [int]$rc } catch { $msg=($_ ^| Out-String); Write-Host $msg; try { Add-Content -LiteralPath (Join-Path -Path (Get-Location).Path -ChildPath 'build_exe.log') -Value $msg } catch {}; exit 99 }"
 set "BUILD_RC=%ERRORLEVEL%"
 
 >>"%BUILD_LOG%" echo.
@@ -44,8 +47,14 @@ set "BUILD_RC=%ERRORLEVEL%"
 echo.
 echo ============================================================
 if "%BUILD_RC%"=="0" (
-    echo BUILD COMPLETE
-    echo EXE: %CD%\dist\%APP_NAME%.exe
+    if exist "dist\%APP_NAME%.exe" (
+        echo BUILD COMPLETE
+        echo EXE: %CD%\dist\%APP_NAME%.exe
+    ) else (
+        set "BUILD_RC=98"
+        echo BUILD FAILED - wrapper returned success but EXE is missing.
+        echo Expected: %CD%\dist\%APP_NAME%.exe
+    )
 ) else (
     echo BUILD FAILED - exit code %BUILD_RC%
 )
@@ -71,6 +80,7 @@ exit /b %BUILD_RC%
 :build_internal
 echo ============================================================
 echo TG Username Hunter - clean isolated Windows build
+echo Script revision: %SCRIPT_REV%
 echo ============================================================
 echo.
 
