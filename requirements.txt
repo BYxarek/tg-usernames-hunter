@@ -1,9 +1,8 @@
 pyrofork==2.3.69
 TgCrypto-pyrofork==1.2.8
 pymediainfo-pyrofork==6.0.2
-customtkinter==6.0.0
+pywebview==6.2.1
 pyaes==1.6.1
 PySocks==1.7.1
-darkdetect==0.8.0
 packaging==26.3
 pyinstaller==6.22.0
