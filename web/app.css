@@ -1,0 +1,61 @@
+:root {
+  --app-bg: #0b0d12;
+  --app-panel: #12151d;
+  --app-panel-2: #171b24;
+  --app-border: rgba(255,255,255,.09);
+  --app-muted: #8e97a8;
+  --app-accent: #f5f7fa;
+}
+
+html, body { background: var(--app-bg); color: #f3f5f7; }
+body { min-width: 420px; }
+.app-shell { background: radial-gradient(circle at 20% -10%, rgba(86,105,160,.12), transparent 34%), var(--app-bg); }
+.app-navbar { background: rgba(11,13,18,.92); backdrop-filter: blur(14px); border-color: var(--app-border)!important; }
+.app-container { max-width: 1060px; }
+.brand-mark {
+  width: 38px; height: 38px; border-radius: 12px; display: grid; place-items: center;
+  background: #f4f6f8; color: #0b0d12; font-weight: 800; letter-spacing: -.04em;
+  box-shadow: 0 8px 30px rgba(255,255,255,.08);
+}
+.tracking-wide { letter-spacing: .06em; }
+.panel {
+  background: linear-gradient(180deg, rgba(255,255,255,.025), transparent 35%), var(--app-panel);
+  border: 1px solid var(--app-border); border-radius: 20px;
+  box-shadow: 0 24px 80px rgba(0,0,0,.22);
+}
+.panel-soft { background: var(--app-panel-2); border: 1px solid var(--app-border); border-radius: 16px; }
+.form-control, .form-select {
+  background-color: #0e1118; border-color: rgba(255,255,255,.12); color: #f3f5f7;
+  min-height: 44px;
+}
+.form-control:focus, .form-select:focus {
+  background-color: #0e1118; color: #fff; border-color: rgba(255,255,255,.36);
+  box-shadow: 0 0 0 .2rem rgba(255,255,255,.06);
+}
+.form-control::placeholder { color: #667085; }
+.form-text, .text-secondary { color: var(--app-muted)!important; }
+.btn-light { --bs-btn-bg: #f5f7fa; --bs-btn-color: #10131a; --bs-btn-border-color: #f5f7fa; font-weight: 650; }
+.btn-outline-secondary { --bs-btn-border-color: rgba(255,255,255,.15); --bs-btn-color: #cbd0d8; }
+.form-check-input { background-color: #202634; border-color: rgba(255,255,255,.2); }
+.form-check-input:checked { background-color: #f5f7fa; border-color: #f5f7fa; }
+.form-switch .form-check-input:checked { --bs-form-switch-bg: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='-4 -4 8 8'%3e%3ccircle r='3' fill='%230b0d12'/%3e%3c/svg%3e"); }
+.metric { padding: 14px 16px; }
+.metric-value { font-size: 1.35rem; font-weight: 700; line-height: 1; }
+.metric-label { font-size: .72rem; color: var(--app-muted); text-transform: uppercase; letter-spacing: .08em; margin-top: .4rem; }
+.result-list { max-height: min(52vh, 470px); overflow-y: auto; }
+.result-row { border-bottom: 1px solid rgba(255,255,255,.065); }
+.result-row:last-child { border-bottom: 0; }
+.username { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+.status-pill { min-width: 92px; text-align: center; }
+.alert { border-radius: 14px; }
+.progress { height: 7px; background: #222733; }
+.progress-bar { background: #f5f7fa; }
+.hero-title { letter-spacing: -.035em; }
+.section-kicker { color: #9ca5b5; text-transform: uppercase; letter-spacing: .12em; font-size: .73rem; font-weight: 700; }
+
+@media (max-width: 767.98px) {
+  .app-container { max-width: 100%; }
+  main .app-container { padding-top: 1.25rem!important; }
+  .panel { border-radius: 16px; }
+  .result-list { max-height: 48vh; }
+}
