@@ -6,7 +6,7 @@ chcp 65001 >nul
 set "APP_NAME=TG_Username_Hunter"
 set "STAGE=.build_stage"
 set "BUILD_LOG=build_exe.log"
-set "SCRIPT_REV=2026-08-19-r4"
+set "SCRIPT_REV=2026-08-19-r5"
 
 rem Internal build mode. The outer invocation launches this mode through
 rem PowerShell Tee-Object so every line is visible live and saved to the log.
@@ -35,7 +35,7 @@ rem Run the actual build as a child CMD process. PowerShell Tee-Object mirrors
 rem stdout/stderr to both this console and build_exe.log in real time.
 rem Any PowerShell wrapper error is fatal and returns code 99.
 powershell -NoProfile -ExecutionPolicy Bypass -Command ^
-  "$ErrorActionPreference='Stop'; try { $root=(Get-Location).Path; $script=Join-Path -Path $root -ChildPath 'build_exe.cmd'; $log=Join-Path -Path $root -ChildPath 'build_exe.log'; $q=[char]34; $cmdline=$q + $script + $q + ' __build'; ^& $env:ComSpec /d /c $cmdline 2^>^&1 ^| Tee-Object -FilePath $log -Append; $rc=$LASTEXITCODE; if ($null -eq $rc) { $rc=1 }; exit [int]$rc } catch { $msg=($_ ^| Out-String); Write-Host $msg; try { Add-Content -LiteralPath (Join-Path -Path (Get-Location).Path -ChildPath 'build_exe.log') -Value $msg } catch {}; exit 99 }"
+  "$ErrorActionPreference='Stop'; try { $root=(Get-Location).Path; $script=Join-Path -Path $root -ChildPath 'build_exe.cmd'; $log=Join-Path -Path $root -ChildPath 'build_exe.log'; $q=[char]34; $cmdline=$q + $script + $q + ' __build'; & $env:ComSpec /d /c $cmdline 2>&1 | Tee-Object -FilePath $log -Append; $rc=$LASTEXITCODE; if ($null -eq $rc) { $rc=1 }; exit [int]$rc } catch { $msg=($_ | Out-String); Write-Host $msg; try { Add-Content -LiteralPath (Join-Path -Path (Get-Location).Path -ChildPath 'build_exe.log') -Value $msg } catch {}; exit 99 }"
 set "BUILD_RC=%ERRORLEVEL%"
 
 >>"%BUILD_LOG%" echo.
