@@ -30,8 +30,10 @@ echo.
 
 rem Run the actual build as a child CMD process. PowerShell Tee-Object mirrors
 rem stdout/stderr to both this console and build_exe.log in real time.
+rem IMPORTANT: 2>&1 and | are PowerShell operators here. Do NOT prefix them
+rem with CMD carets (^), because the whole PowerShell command is already quoted.
 powershell -NoProfile -ExecutionPolicy Bypass -Command ^
-  "$ErrorActionPreference='Continue'; $q=[char]34; $line=$q + (Join-Path $env:CD 'build_exe.cmd') + $q + ' __build'; & cmd.exe /d /c $line 2^>^&1 ^| Tee-Object -FilePath (Join-Path $env:CD 'build_exe.log') -Append; exit $LASTEXITCODE"
+  "$ErrorActionPreference='Continue'; $q=[char]34; $line=$q + (Join-Path $env:CD 'build_exe.cmd') + $q + ' __build'; & cmd.exe /d /c $line 2>&1 | Tee-Object -FilePath (Join-Path $env:CD 'build_exe.log') -Append; exit $LASTEXITCODE"
 set "BUILD_RC=%ERRORLEVEL%"
 
 >>"%BUILD_LOG%" echo.
